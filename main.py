@@ -34,6 +34,8 @@ def send_welcome(message):
     markup.add(InlineKeyboardButton("🇬🇧 İngiltere - WhatsApp (150 TL)", callback_data="sel_wa_16"))
     markup.add(InlineKeyboardButton("🇺🇸 Amerika - Telegram (150 TL)", callback_data="sel_tg_12"))
     markup.add(InlineKeyboardButton("🇹🇷 Türkiye - Telegram (200 TL)", callback_data="sel_tg_0"))
+    # İstediğin gibi ürün kataloğunun altına canlı destek butonu eklendi
+    markup.add(InlineKeyboardButton("💬 Canlı Destek / İletişim: @SMSPATRONUM", url="https://t.me/SMSPATRONUM"))
     
     bot.send_message(
         message.chat.id, 
@@ -77,7 +79,9 @@ def callback_query(call):
             f"📌 Ödeme Bildirimi:\n"
             f"Alıcı: {TARGET_NAME}\n"
             f"IBAN: {IBAN}\n\n"
-            f"Lütfen yukarıdaki IBAN'a ödemeyi yaptıktan sonra dekontu (fotoğraf veya dosya olarak) gönderin."
+            f"Lütfen yukarıdaki IBAN'a ödemeyi yaptıktan sonra dekontu (fotoğraf veya dosya olarak) gönderin.\n\n"
+            f"💬 **Canlı Destek:** {SUPPORT_USERNAME}",
+            parse_mode="Markdown"
         )
         
     elif data == "change_number":
@@ -114,7 +118,7 @@ def check_sms_loop(chat_id, activation_id):
             
             if "STATUS_OK" in res_text:
                 code = res_text.split(":")[-1]
-                bot.send_message(chat_id, f"✅ **SMS Kodu Geldi!**\n\n🔑 Kodunuz: `{code}`\n\nİletişim / Destek: {SUPPORT_USERNAME}", parse_mode="Markdown")
+                bot.send_message(chat_id, f"✅ **SMS Kodu Geldi!**\n\n🔑 Kodunuz: `{code}`\n\n💬 İletişim / Destek: {SUPPORT_USERNAME}", parse_mode="Markdown")
                 return
             elif "STATUS_CANCEL" in res_text:
                 return
@@ -129,6 +133,7 @@ def fetch_and_send_number(chat_id, service, country_id, is_replacement=False):
         response = requests.get(url, timeout=15)
         res_text = response.text.strip()
         
+        # Eğer stok yoksa (NO_NUMBERS) veya yanıt hatalıysa ucuz alternatif ile fallback yap
         if "NO_NUMBERS" in res_text or "ACCESS_NUMBER" not in res_text:
             fallback_url = f"https://onaylasms.com.tr/stubs/handler_api.php?api_key={API_KEY}&action=getNumber&service=wa&country=16"
             fallback_resp = requests.get(fallback_url, timeout=15)
@@ -143,6 +148,7 @@ def fetch_and_send_number(chat_id, service, country_id, is_replacement=False):
             
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("🔄 Kod Gelmedi / Numara Değiştir", callback_data="change_number"))
+            markup.add(InlineKeyboardButton("💬 Canlı Destek ile İletişim", url="https://t.me/SMSPATRONUM"))
             
             prefix_text = "🔄 **Yeni Numaranız Hazırlandı!**\n\n" if is_replacement else "✅ **Dekont onaylandı, numaranız alındı!**\n\n"
             
@@ -160,19 +166,24 @@ def fetch_and_send_number(chat_id, service, country_id, is_replacement=False):
             sms_thread = threading.Thread(target=check_sms_loop, args=(chat_id, activation_id))
             sms_thread.start()
         else:
+            # Sağlayıcı anlık boş döndüyse bile müşteriye manuel destek çıkışı sun
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("💬 Canlı Destek ile Bağlan", url="https://t.me/SMSPATRONUM"))
             bot.send_message(
                 chat_id, 
-                f"⚠️ Yoğunluk nedeniyle geçici bir durum oluştu. Lütfen tekrar dekont gönderin.\n\nİletişim / Destek: {SUPPORT_USERNAME}"
+                f"⚠️ Anlık yoğunluk nedeniyle numara havuzu yenileniyor. Lütfen tekrar dekont gönderin veya hemen destekle iletişime geçin.\n\n💬 **İletişim / Destek:** {SUPPORT_USERNAME}",
+                reply_markup=markup,
+                parse_mode="Markdown"
             )
     except Exception as e:
-        bot.send_message(chat_id, f"Bağlantı hatası oluştu: {str(e)}.\n\nİletişim / Destek: {SUPPORT_USERNAME}")
+        bot.send_message(chat_id, f"Bağlantı hatası oluştu. Lütfen tekrar deneyin.\n\n💬 İletişim / Destek: {SUPPORT_USERNAME}")
 
 @bot.message_handler(content_types=['text', 'photo', 'document', 'audio', 'video', 'sticker'])
 def handle_payment_or_proof(message):
     chat_id = message.chat.id
     
     if chat_id not in user_selections:
-        bot.reply_to(message, f"Lütfen önce /start komutunu gönderip bir hizmet seçin.\n\nİletişim / Destek: {SUPPORT_USERNAME}")
+        bot.reply_to(message, f"Lütfen önce /start komutunu gönderip bir hizmet seçin.\n\n💬 İletişim / Destek: {SUPPORT_USERNAME}")
         return
 
     selection = user_selections[chat_id]
