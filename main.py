@@ -52,7 +52,7 @@ def handle_incoming_messages(message):
     service = selection["service"]
     country_id = selection["country"]
     
-    bot.reply_to(message, "🔄 Dekont alındı, numara hazırlanıyor...")
+    bot.reply_to(message, "🔄 Dekont alındva, numara talep ediliyor...")
     fetch_and_send_number(chat_id, service, country_id, is_replacement=False)
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -140,56 +140,53 @@ def check_sms_loop(chat_id, activation_id):
         time.sleep(5)
 
 def fetch_and_send_number(chat_id, service, country_id, is_replacement=False):
-    phone_number = "Numara Alınıyor..."
-    activation_id = "99999999"
-    
     try:
+        # Doğrudan onaylasms.com.tr API çağrısı
         url = f"https://onaylasms.com.tr/stubs/handler_api.php?api_key={API_KEY}&action=getNumber&service={service}&country={country_id}"
-        response = requests.get(url, timeout=10)
+        response = requests.get(url, timeout=15)
         res_text = response.text.strip()
+        print(f"API Yanıtı: {res_text}")
         
         if "ACCESS_NUMBER" in res_text:
             parts = res_text.split(":")
-            if len(parts) >= 3:
-                activation_id = parts[1]
-                phone_number = parts[2]
+            activation_id = parts[1]
+            phone_number = parts[2]
+            
+            user_activations[chat_id] = activation_id
+            
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("🔄 Kod Gelmedi / Numara Değiştir", callback_data="change_number"))
+            markup.add(InlineKeyboardButton("💬 Canlı Destek ile İletişim", url="https://t.me/SMSPATRONUM"))
+            
+            prefix_text = "🔄 **Yeni Numaranız Hazırlandı!**\n\n" if is_replacement else "✅ **Dekont onaylandı, numaranız alındı!**\n\n"
+            
+            bot.send_message(
+                chat_id, 
+                f"{prefix_text}"
+                f"Numara: +{phone_number}\n"
+                f"İşlem ID: {activation_id}\n\n"
+                f"⏳ SMS kodu bekleniyor...\n\n"
+                f"💬 **İletişim / Destek:** {SUPPORT_USERNAME}", 
+                reply_markup=markup,
+                parse_mode="Markdown"
+            )
+            
+            sms_thread = threading.Thread(target=check_sms_loop, args=(chat_id, activation_id))
+            sms_thread.start()
         else:
-            # Yedek deneme (İngiltere WhatsApp)
-            fallback_url = f"https://onaylasms.com.tr/stubs/handler_api.php?api_key={API_KEY}&action=getNumber&service=wa&country=16"
-            fallback_resp = requests.get(fallback_url, timeout=10)
-            fallback_text = fallback_resp.text.strip()
-            if "ACCESS_NUMBER" in fallback_text:
-                parts = fallback_text.split(":")
-                if len(parts) >= 3:
-                    activation_id = parts[1]
-                    phone_number = parts[2]
-            else:
-                # Sağlayıcı o an yanıt vermese bile müşteriyi asla bloklamamak için simüle edilmiş numara alanı açar
-                phone_number = "Destekten Talep Ediniz (API Havuz Yanıtı Bekleniyor)"
-    except Exception:
-        phone_number = "Destekten Talep Ediniz (Bağlantı Onaylandı)"
-
-    user_activations[chat_id] = activation_id
-    
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("🔄 Kod Gelmedi / Numara Değiştir", callback_data="change_number"))
-    markup.add(InlineKeyboardButton("💬 Canlı Destek ile İletişim", url="https://t.me/SMSPATRONUM"))
-    
-    prefix_text = "🔄 **Yeni Numaranız Hazırlandı!**\n\n" if is_replacement else "✅ **Dekont onaylandı, numaranız alındı!**\n\n"
-    
-    bot.send_message(
-        chat_id, 
-        f"{prefix_text}"
-        f"Numara: +{phone_number}\n"
-        f"İşlem ID: {activation_id}\n\n"
-        f"⏳ SMS kodu bekleniyor...\n\n"
-        f"💬 **İletişim / Destek:** {SUPPORT_USERNAME}", 
-        reply_markup=markup,
-        parse_mode="Markdown"
-    )
-    
-    sms_thread = threading.Thread(target=check_sms_loop, args=(chat_id, activation_id))
-    sms_thread.start()
+            # Sağlayıcıdan gelen ham yanıtı kullanıcıya gösterelim ki stok veya hata durumunu net görebilelim
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("💬 Canlı Destek ile Bağlan", url="https://t.me/SMSPATRONUM"))
+            bot.send_message(
+                chat_id, 
+                f"⚠️ Sağlayıcı Yanıtı: `{res_text}`\n\n"
+                f"Lütfen yukarıdaki durumu canlı destek üzerinden bildirin.\n\n"
+                f"💬 **İletişim / Destek:** {SUPPORT_USERNAME}",
+                reply_markup=markup,
+                parse_mode="Markdown"
+            )
+    except Exception as e:
+        bot.send_message(chat_id, f"Bağlantı hatası: {str(e)}\n\n💬 İletişim / Destek: {SUPPORT_USERNAME}")
 
 if __name__ == "__main__":
     t = threading.Thread(target=run_flask)
