@@ -1,4 +1,5 @@
 import os
+import time
 import threading
 import requests
 import telebot
@@ -14,7 +15,6 @@ IBAN = "TR62 0006 2000 5000 0006 8107 73"
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-# Kullanıcıların seçimlerini tutmak için sözlük: {chat_id: {"service": "wa/tg", "country": "0/12/16"}}
 user_selections = {}
 
 @app.route('/')
@@ -54,7 +54,6 @@ def callback_query(call):
             "country": country_id
         }
         
-        # İsimlendirmeler
         c_names = {"0": "Türkiye", "12": "Amerika", "16": "İngiltere"}
         s_names = {"wa": "WhatsApp", "tg": "Telegram"}
         
@@ -96,8 +95,21 @@ def handle_payment_or_proof(message):
         bot.reply_to(message, f"Bağlantı hatası oluştu: {str(e)}")
 
 if __name__ == "__main__":
+    # Flask sunucusunu başlat
     t = threading.Thread(target=run_flask)
     t.start()
     
-    bot.remove_webhook()
-    bot.infinity_polling()
+    # Eski webhook ve oturum çakışmalarını tamamen temizle
+    try:
+        bot.remove_webhook()
+        time.sleep(1)
+    except Exception:
+        pass
+    
+    # Çakışma hatalarına karşı güvenli polling döngüsü
+    while True:
+        try:
+            bot.polling(none_stop=True, interval=0, timeout=20)
+        except Exception as e:
+            print(f"Polling hatası yeniden bağlanıyor: {e}")
+            time.sleep(3)
