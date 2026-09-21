@@ -7,7 +7,8 @@ from flask import Flask
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 TOKEN = "8966819189:AAFhWDClW5LfI1UQeKZqhgu8C8OCR-qjqzY"
-API_KEY = "osms_78764ab234637198f606b1bb0ce55ced58aabbb2f1be18b3"
+# Yeni API Anahtarın Entegre Edildi
+API_KEY = "osms_686d5d570f17954f960c7f4411bf87edecf774e806a423a7"
 TARGET_NAME = "Resul Sakal"
 IBAN = "TR62 0006 2000 5000 0006 8107 73"
 SUPPORT_USERNAME = "@SMSPATRONUM"
@@ -52,7 +53,7 @@ def handle_incoming_messages(message):
     service = selection["service"]
     country_id = selection["country"]
     
-    bot.reply_to(message, "🔄 Dekont alındva, numara talep ediliyor...")
+    bot.reply_to(message, "🔄 Dekont alındı, numara talep ediliyor...")
     fetch_and_send_number(chat_id, service, country_id, is_replacement=False)
 
 @bot.callback_query_handler(func=lambda call: True)
@@ -141,7 +142,6 @@ def check_sms_loop(chat_id, activation_id):
 
 def fetch_and_send_number(chat_id, service, country_id, is_replacement=False):
     try:
-        # Doğrudan onaylasms.com.tr API çağrısı
         url = f"https://onaylasms.com.tr/stubs/handler_api.php?api_key={API_KEY}&action=getNumber&service={service}&country={country_id}"
         response = requests.get(url, timeout=15)
         res_text = response.text.strip()
@@ -174,7 +174,6 @@ def fetch_and_send_number(chat_id, service, country_id, is_replacement=False):
             sms_thread = threading.Thread(target=check_sms_loop, args=(chat_id, activation_id))
             sms_thread.start()
         else:
-            # Sağlayıcıdan gelen ham yanıtı kullanıcıya gösterelim ki stok veya hata durumunu net görebilelim
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("💬 Canlı Destek ile Bağlan", url="https://t.me/SMSPATRONUM"))
             bot.send_message(
