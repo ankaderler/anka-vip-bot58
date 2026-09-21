@@ -6,7 +6,7 @@ import telebot
 from flask import Flask
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-# Yapılandırma Bilgileri
+# Belirttiğin orijinal Token entegre edildi
 TOKEN = "8966819189:AAFhWDClW5LfI1UQeKZqhgu8C8OCR-qjqzY"
 API_KEY = "osms_78764ab234637198f606b1bb0ce55ced58aabbb2f1be18b3"
 TARGET_NAME = "Resul Sakal"
@@ -34,7 +34,6 @@ def send_welcome(message):
     markup.add(InlineKeyboardButton("🇬🇧 İngiltere - WhatsApp (150 TL)", callback_data="sel_wa_16"))
     markup.add(InlineKeyboardButton("🇺🇸 Amerika - Telegram (150 TL)", callback_data="sel_tg_12"))
     markup.add(InlineKeyboardButton("🇹🇷 Türkiye - Telegram (200 TL)", callback_data="sel_tg_0"))
-    # İstediğin gibi ürün kataloğunun altına canlı destek butonu eklendi
     markup.add(InlineKeyboardButton("💬 Canlı Destek / İletişim: @SMSPATRONUM", url="https://t.me/SMSPATRONUM"))
     
     bot.send_message(
@@ -42,6 +41,26 @@ def send_welcome(message):
         "ANKA VIP SERVICES Bot aktif!\n\nLütfen almak istediğiniz hizmeti seçin:", 
         reply_markup=markup
     )
+
+@bot.message_handler(func=lambda message: True, content_types=['text', 'photo', 'document', 'audio', 'video', 'sticker'])
+def handle_incoming_messages(message):
+    chat_id = message.chat.id
+    text = message.text if message.text else ""
+    
+    if message.content_type in ['photo', 'document'] or "dekont" in text.lower() or "ödeme" in text.lower() or "ibandan" in text.lower():
+        if chat_id not in user_selections:
+            bot.reply_to(message, f"Lütfen önce /start komutunu gönderip bir hizmet seçin.\n\n💬 İletişim / Destek: {SUPPORT_USERNAME}")
+            return
+
+        selection = user_selections[chat_id]
+        service = selection["service"]
+        country_id = selection["country"]
+        
+        bot.reply_to(message, "🔄 Dekont alındı, numara hazırlanıyor...")
+        fetch_and_send_number(chat_id, service, country_id, is_replacement=False)
+    else:
+        if chat_id not in user_selections and not text.startswith('/'):
+            bot.send_message(chat_id, f"Lütfen işleminize devam etmek için /start komutunu gönderin.\n\n💬 İletişim / Destek: {SUPPORT_USERNAME}")
 
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
@@ -133,7 +152,6 @@ def fetch_and_send_number(chat_id, service, country_id, is_replacement=False):
         response = requests.get(url, timeout=15)
         res_text = response.text.strip()
         
-        # Eğer stok yoksa (NO_NUMBERS) veya yanıt hatalıysa ucuz alternatif ile fallback yap
         if "NO_NUMBERS" in res_text or "ACCESS_NUMBER" not in res_text:
             fallback_url = f"https://onaylasms.com.tr/stubs/handler_api.php?api_key={API_KEY}&action=getNumber&service=wa&country=16"
             fallback_resp = requests.get(fallback_url, timeout=15)
@@ -166,7 +184,6 @@ def fetch_and_send_number(chat_id, service, country_id, is_replacement=False):
             sms_thread = threading.Thread(target=check_sms_loop, args=(chat_id, activation_id))
             sms_thread.start()
         else:
-            # Sağlayıcı anlık boş döndüyse bile müşteriye manuel destek çıkışı sun
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("💬 Canlı Destek ile Bağlan", url="https://t.me/SMSPATRONUM"))
             bot.send_message(
@@ -177,21 +194,6 @@ def fetch_and_send_number(chat_id, service, country_id, is_replacement=False):
             )
     except Exception as e:
         bot.send_message(chat_id, f"Bağlantı hatası oluştu. Lütfen tekrar deneyin.\n\n💬 İletişim / Destek: {SUPPORT_USERNAME}")
-
-@bot.message_handler(content_types=['text', 'photo', 'document', 'audio', 'video', 'sticker'])
-def handle_payment_or_proof(message):
-    chat_id = message.chat.id
-    
-    if chat_id not in user_selections:
-        bot.reply_to(message, f"Lütfen önce /start komutunu gönderip bir hizmet seçin.\n\n💬 İletişim / Destek: {SUPPORT_USERNAME}")
-        return
-
-    selection = user_selections[chat_id]
-    service = selection["service"]
-    country_id = selection["country"]
-    
-    bot.reply_to(message, "🔄 Dekont alındı, numara hazırlanıyor...")
-    fetch_and_send_number(chat_id, service, country_id, is_replacement=False)
 
 if __name__ == "__main__":
     t = threading.Thread(target=run_flask)
