@@ -35,17 +35,18 @@ IBAN = "TR62 0006 2000 5000 0006 8107 73"
 RECIPIENT = "Resul Sakal"
 SUPPORT_USERNAME = "SMSPATRONUM"
 
-# Onayla SMS API Bilgileri
+# Onayla SMS Gerçek API Bilgileri
 SMS_API_KEY = "osms_64c57cd4c153d55613acaeb0b442b643eb12f234c9585657"
-SMS_API_URL = "https://onaylasms.com.tr/stapi.php" # Panel altyapısına göre endpoint
+SMS_API_URL = "https://onaylasms.com.tr/stubs/handler_api.php"
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-PRICES = {
-    "tr_wp": 300,
-    "tr_tg": 200,
-    "abd_wp": 150,
-    "uk_wp": 150
+# Servis Kodları (onaylasms.com.tr altyapısına uygun servis isimleri)
+SERVICES = {
+    "tr_wp": {"name": "TR WhatsApp", "code": "wa", "price": 300},
+    "tr_tg": {"name": "TR Telegram", "code": "tg", "price": 200},
+    "abd_wp": {"name": "ABD WhatsApp", "code": "wa", "price": 150},
+    "uk_wp": {"name": "İngiltere WhatsApp", "code": "wa", "price": 150}
 }
 
 def main_menu():
@@ -77,20 +78,13 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if data.startswith("buy_"):
         service_key = data.replace("buy_", "")
-        price = PRICES.get(service_key, 300)
+        service_info = SERVICES.get(service_key, SERVICES["tr_wp"])
+        price = service_info["price"]
         
         context.user_data["selected_service"] = service_key
 
-        service_names = {
-            "tr_wp": "TR WhatsApp",
-            "tr_tg": "TR Telegram",
-            "abd_wp": "ABD WhatsApp",
-            "uk_wp": "İngiltere WhatsApp"
-        }
-        s_name = service_names.get(service_key, "VIP Numara")
-
         text = (
-            f"🛒 *Seçilen Paket: {s_name}*\n"
+            f"🛒 *Seçilen Paket: {service_info['name']}*\n"
             f"💰 Tutar: *{price} TL*\n\n"
             f"💳 *Ödeme Bilgileri*\n"
             f"IBAN:\n`{IBAN}`\n\n"
@@ -98,7 +92,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "━━━━━━━━━━━━━━━━\n"
             f"1️⃣ Yukarıdaki hesaba *{price} TL* gönderin.\n"
             "2️⃣ Ödeme yaptıktan sonra banka dekontunun ekran görüntüsünü bu sohbete gönderin.\n"
-            "3️⃣ Bot dekontu onaylayıp `onaylasms.com.tr` üzerinden numaranızı ve SMS kodunuzu otomatik teslim edecektir."
+            "3️⃣ Bot dekontu onaylayıp `onaylasms.com.tr` üzerinden gerçek numaranızı ve SMS kodunuzu otomatik teslim edecektir."
         )
         keyboard = [
             [InlineKeyboardButton("⬅️ Ana Menüye Dön", callback_data="home")]
@@ -113,49 +107,42 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_menu())
 
-# Gerçek API Üzerinden Numara ve Kod Çekme Fonksiyonu
-def fetch_number_from_api(service_key):
+# Gerçek API Üzerinden Siteden Numara Çekme Fonksiyonu
+def fetch_real_number(service_code):
     try:
-        # Onaylasms API istek parametreleri (örnek yapı)
         params = {
             "api_key": SMS_API_KEY,
             "action": "getNumber",
-            "service": service_key
+            "service": service_code
         }
-        response = requests.get(SMS_API_URL, params=params, timeout=10)
-        data = response.json()
+        response = requests.get(SMS_API_URL, params=params, timeout=15)
+        result_text = response.text.strip()
         
-        # Eğer stokta yoksa alternatif/güncel numara çekme mantığı
-        if data.get("status") == "success":
-            return data.get("number"), data.get("sms_code", "SMS Bekleniyor...")
+        # Standart API yanıt kontrolü (Örn: ACCESS_NUMBER:id:number)
+        if "ACCESS_NUMBER" in result_text:
+            parts = result_text.split(":")
+            activation_id = parts[1] if len(parts) > 1 else "Bilinmiyor"
+            phone_number = parts[2] if len(parts) > 2 else result_text
+            return phone_number, f"Kod Bekleniyor (ID: {activation_id})"
         else:
-            # Stok yoksa sistem otomatik alternatif bir numara döndürür veya varsayılan havuzdan atar
-            return "+90 542 999 8877", "Bekleniyor..."
+            return "Stok Bulunamadı", f"API Yanıtı: {result_text}"
     except Exception as e:
-        logging.error(f"API Hatası: {e}")
-        # Bağlantı veya stok durumunda müşteriye mağduriyet yaratmamak için yedek numara
-        return "+90 533 111 2233", "Kod Bekleniyor..."
+        logging.error(f"API Bağlantı Hatası: {e}")
+        return "Bağlantı Hatası", str(e)
 
 async def receipt_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.photo or update.message.document:
         service_key = context.user_data.get("selected_service", "tr_wp")
-        
-        service_names = {
-            "tr_wp": "TR WhatsApp",
-            "tr_tg": "TR Telegram",
-            "abd_wp": "ABD WhatsApp",
-            "uk_wp": "İngiltere WhatsApp"
-        }
-        s_name = service_names.get(service_key, "Numara")
+        service_info = SERVICES.get(service_key, SERVICES["tr_wp"])
 
-        # Siteden gerçek numara ve kodu çek
-        assigned_number, sms_code = fetch_number_from_api(service_key)
+        # Siteden gerçek numara çekme isteği gönderiliyor
+        assigned_number, sms_status = fetch_real_number(service_info["code"])
 
         text = (
-            f"✅ *Dekont Onaylandı & Numara Tedarik Edildi!*\n\n"
-            f"📦 Servis: *{s_name}*\n"
-            f"📱 *Numara:* `{assigned_number}`\n"
-            f"💬 *Gelen Kod:* `{sms_code}`\n\n"
+            f"✅ *Dekont Onaylandı & Siteden Numara Çekildi!*\n\n"
+            f"📦 Servis: *{service_info['name']}*\n"
+            f"📱 *Gerçek Numara:* `{assigned_number}`\n"
+            f"💬 *Durum / Kod:* `{sms_status}`\n\n"
             f"⚠️ Destek & Sorun Bildirimi İçin: @{SUPPORT_USERNAME}"
         )
         keyboard = [[InlineKeyboardButton("🏠 Ana Menü", callback_data="home")]]
@@ -171,7 +158,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, receipt_handler))
     
-    print("ANKA VIP SMS BOT AKTİF VE API'YE BAĞLI!")
+    print("ANKA VIP SMS BOT GERÇEK API İLE AKTİF!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
