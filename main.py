@@ -21,7 +21,7 @@ user_activations = {}
 
 @app.route('/')
 def home():
-    return "ANGA VIP SERVICES Bot Aktif ve Calisiyor!"
+    return "ANKA VIP SERVICES Bot Aktif ve Calisiyor!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -33,11 +33,11 @@ def send_welcome(message):
     markup.add(InlineKeyboardButton("🇹🇷 Türkiye - WhatsApp (300 TL)", callback_data="sel_wa_0"))
     markup.add(InlineKeyboardButton("🇬🇧 İngiltere - WhatsApp (150 TL)", callback_data="sel_wa_16"))
     markup.add(InlineKeyboardButton("🇺🇸 Amerika - Telegram (150 TL)", callback_data="sel_tg_12"))
-    markup.add(InlineKeyboardButton("🇹🇷 Türkiye - Telegram (200 TL)", callback_data="sel_tg_0")) # Fiyat 200 TL yapıldı
+    markup.add(InlineKeyboardButton("🇹🇷 Türkiye - Telegram (200 TL)", callback_data="sel_tg_0"))
     
     bot.send_message(
         message.chat.id, 
-        "ANGA VIP SERVICES Bot aktif!\n\nLütfen almak istediğiniz hizmeti seçin:", 
+        "ANKA VIP SERVICES Bot aktif!\n\nLütfen almak istediğiniz hizmeti seçin:", 
         reply_markup=markup
     )
 
@@ -67,7 +67,7 @@ def callback_query(call):
             ("wa", "0"): "300 TL",
             ("wa", "16"): "150 TL",
             ("tg", "12"): "150 TL",
-            ("tg", "0"): "200 TL" # Fiyat 200 TL güncellendi
+            ("tg", "0"): "200 TL"
         }
         price = prices.get((service, country_id), "150 TL")
         
