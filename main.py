@@ -7,7 +7,6 @@ from flask import Flask
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 TOKEN = "8966819189:AAFhWDClW5LfI1UQeKZqhgu8C8OCR-qjqzY"
-# Yeni API Anahtarın Entegre Edildi
 API_KEY = "osms_686d5d570f17954f960c7f4411bf87edecf774e806a423a7"
 TARGET_NAME = "Resul Sakal"
 IBAN = "TR62 0006 2000 5000 0006 8107 73"
@@ -29,6 +28,7 @@ def run_flask():
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+    chat_id = message.chat.id
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("🇹🇷 Türkiye - WhatsApp (300 TL)", callback_data="sel_wa_0"))
     markup.add(InlineKeyboardButton("🇬🇧 İngiltere - WhatsApp (150 TL)", callback_data="sel_wa_16"))
@@ -37,7 +37,7 @@ def send_welcome(message):
     markup.add(InlineKeyboardButton("💬 Canlı Destek / İletişim: @SMSPATRONUM", url="https://t.me/SMSPATRONUM"))
     
     bot.send_message(
-        message.chat.id, 
+        chat_id, 
         "ANKA VIP SERVICES Bot aktif!\n\nLütfen almak istediğiniz hizmeti seçin:", 
         reply_markup=markup
     )
@@ -45,7 +45,11 @@ def send_welcome(message):
 @bot.message_handler(func=lambda message: True, content_types=['text', 'photo', 'document', 'audio', 'video', 'sticker'])
 def handle_incoming_messages(message):
     chat_id = message.chat.id
+    text = message.text if message.text else ""
     
+    if text.startswith('/'):
+        return
+
     if chat_id not in user_selections:
         user_selections[chat_id] = {"service": "tg", "country": "0"}
 
@@ -191,6 +195,7 @@ if __name__ == "__main__":
     t = threading.Thread(target=run_flask)
     t.start()
     
+    # Telegram webhook ve çakışmaları tamamen sıfırlama
     try:
         requests.get(f"https://api.telegram.org/bot{TOKEN}/deleteWebhook?drop_pending_updates=True", timeout=10)
         time.sleep(2)
