@@ -3,6 +3,7 @@ import threading
 import http.server
 import socketserver
 import logging
+import time
 import requests
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import (
@@ -41,12 +42,12 @@ SMS_API_URL = "https://onaylasms.com.tr/stubs/handler_api.php"
 
 logging.basicConfig(format="%(asctime)s - %(levelname)s - %(message)s", level=logging.INFO)
 
-# Servis Kodları (onaylasms.com.tr altyapısına uygun servis isimleri)
+# Servis Bilgileri (onaylasms.com.tr panelindeki standart SMS-Activate / 5SIM uyumlu servis kodları)
 SERVICES = {
-    "tr_wp": {"name": "TR WhatsApp", "code": "wa", "price": 300},
-    "tr_tg": {"name": "TR Telegram", "code": "tg", "price": 200},
-    "abd_wp": {"name": "ABD WhatsApp", "code": "wa", "price": 150},
-    "uk_wp": {"name": "İngiltere WhatsApp", "code": "wa", "price": 150}
+    "tr_wp": {"name": "TR WhatsApp", "code": "whatsapp", "price": 300},
+    "tr_tg": {"name": "TR Telegram", "code": "telegram", "price": 200},
+    "abd_wp": {"name": "ABD WhatsApp", "code": "whatsapp", "price": 150},
+    "uk_wp": {"name": "İngiltere WhatsApp", "code": "whatsapp", "price": 150}
 }
 
 def main_menu():
@@ -107,36 +108,41 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         await query.edit_message_text(text, parse_mode="Markdown", reply_markup=main_menu())
 
-# Gerçek API Üzerinden Siteden Numara Çekme Fonksiyonu
-def fetch_real_number(service_code):
-    try:
-        params = {
-            "api_key": SMS_API_KEY,
-            "action": "getNumber",
-            "service": service_code
-        }
-        response = requests.get(SMS_API_URL, params=params, timeout=15)
-        result_text = response.text.strip()
-        
-        # Standart API yanıt kontrolü (Örn: ACCESS_NUMBER:id:number)
-        if "ACCESS_NUMBER" in result_text:
-            parts = result_text.split(":")
-            activation_id = parts[1] if len(parts) > 1 else "Bilinmiyor"
-            phone_number = parts[2] if len(parts) > 2 else result_text
-            return phone_number, f"Kod Bekleniyor (ID: {activation_id})"
-        else:
-            return "Stok Bulunamadı", f"API Yanıtı: {result_text}"
-    except Exception as e:
-        logging.error(f"API Bağlantı Hatası: {e}")
-        return "Bağlantı Hatası", str(e)
+# Stok Bulamazsa Siteyi Yenileyerek Tekrar Deneyen Akıllı Numara Çekme Fonksiyonu
+def fetch_real_number_with_retry(service_code):
+    params = {
+        "api_key": SMS_API_KEY,
+        "action": "getNumber",
+        "service": service_code
+    }
+    
+    # Stok yoksa siteyi 3 kez ard arda yenileyip (tekrar sorgulayarak) numara düşürmeye çalışır
+    for attempt in range(3):
+        try:
+            response = requests.get(SMS_API_URL, params=params, timeout=15)
+            result_text = response.text.strip()
+            
+            if "ACCESS_NUMBER" in result_text:
+                parts = result_text.split(":")
+                activation_id = parts[1] if len(parts) > 1 else "Bilinmiyor"
+                phone_number = parts[2] if len(parts) > 2 else result_text
+                return phone_number, f"Kod Bekleniyor (ID: {activation_id})"
+            
+            # Eğer stok yoksa (NO_NUMBERS veya BAD_SERVICE dönerse) 2 saniye bekleyip siteyi tekrar yeniler/sorgular
+            time.sleep(2)
+        except Exception as e:
+            logging.error(f"API Deneme Hatası ({attempt+1}): {e}")
+            time.sleep(2)
+            
+    return "Stok Bulunamadı", "Lütfen Canlı Destek ile İletişime Geçin"
 
 async def receipt_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.photo or update.message.document:
         service_key = context.user_data.get("selected_service", "tr_wp")
         service_info = SERVICES.get(service_key, SERVICES["tr_wp"])
 
-        # Siteden gerçek numara çekme isteği gönderiliyor
-        assigned_number, sms_status = fetch_real_number(service_info["code"])
+        # Siteden stok arama ve yenileme döngüsü tetikleniyor
+        assigned_number, sms_status = fetch_real_number_with_retry(service_info["code"])
 
         text = (
             f"✅ *Dekont Onaylandı & Siteden Numara Çekildi!*\n\n"
@@ -158,7 +164,7 @@ def main():
     app.add_handler(CallbackQueryHandler(button_handler))
     app.add_handler(MessageHandler(filters.PHOTO | filters.Document.ALL, receipt_handler))
     
-    print("ANKA VIP SMS BOT GERÇEK API İLE AKTİF!")
+    print("ANKA VIP SMS BOT Yenileme Özelliği ile Aktif!")
     app.run_polling(drop_pending_updates=True)
 
 if __name__ == "__main__":
