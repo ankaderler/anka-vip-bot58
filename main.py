@@ -7,20 +7,20 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # Yapılandırma Bilgileri
 TOKEN = "8966819189:AAFhWDClW5LfI1UQeKZqhgu8C8OCR-qjqzY"
-API_KEY = "sms_78764ab234637198f606b1bb0ce55ced58aabbb2f1be18b3"
+API_KEY = "osms_78764ab234637198f606b1bb0ce55ced58aabbb2f1be18b3"
 TARGET_NAME = "Resul Sakal"
 IBAN = "TR62 0006 2000 5000 0006 8107 73"
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
-user_countries = {}
+# Kullanıcıların seçimlerini tutmak için sözlük: {chat_id: {"service": "wa/tg", "country": "0/12/16"}}
+user_selections = {}
 
 @app.route('/')
 def home():
     return "ANGA VIP SERVICES Bot Aktif ve Calisiyor!"
 
-# Render'ın port isteğini karşılamak için mini web sunucusu
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
@@ -28,13 +28,14 @@ def run_flask():
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("🇹🇷 Türkiye - WhatsApp", callback_data="country_0"))
-    markup.add(InlineKeyboardButton("🇺🇸 Amerika - WhatsApp", callback_data="country_12"))
-    markup.add(InlineKeyboardButton("🇬🇧 İngiltere - WhatsApp", callback_data="country_16"))
+    markup.add(InlineKeyboardButton("🇹🇷 Türkiye - WhatsApp", callback_data="sel_wa_0"))
+    markup.add(InlineKeyboardButton("🇬🇧 İngiltere - WhatsApp", callback_data="sel_wa_16"))
+    markup.add(InlineKeyboardButton("🇺🇸 Amerika - Telegram", callback_data="sel_tg_12"))
+    markup.add(InlineKeyboardButton("🇹🇷 Türkiye - Telegram", callback_data="sel_tg_0"))
     
     bot.send_message(
         message.chat.id, 
-        "ANGA VIP SERVICES Bot aktif!\n\nLütfen almak istediğiniz ülkeyi seçin:", 
+        "ANGA VIP SERVICES Bot aktif!\n\nLütfen almak istediğiniz hizmeti seçin:", 
         reply_markup=markup
     )
 
@@ -43,16 +44,26 @@ def callback_query(call):
     data = call.data
     bot.answer_callback_query(call.id)
     
-    if data.startswith("country_"):
-        country_id = data.split("_")[1]
-        user_countries[call.message.chat.id] = country_id
+    if data.startswith("sel_"):
+        parts = data.split("_")
+        service = parts[1]      # wa veya tg
+        country_id = parts[2]   # 0, 12, 16
         
-        country_names = {"0": "Türkiye", "12": "Amerika", "16": "İngiltere"}
-        c_name = country_names.get(country_id, "Türkiye")
+        user_selections[call.message.chat.id] = {
+            "service": service,
+            "country": country_id
+        }
+        
+        # İsimlendirmeler
+        c_names = {"0": "Türkiye", "12": "Amerika", "16": "İngiltere"}
+        s_names = {"wa": "WhatsApp", "tg": "Telegram"}
+        
+        c_name = c_names.get(country_id, "Türkiye")
+        s_name = s_names.get(service, "WhatsApp")
         
         bot.send_message(
             call.message.chat.id, 
-            f"Seçilen Ürün: 🇹🇷 {c_name} - WhatsApp\nTutar: 150 TL\n\n"
+            f"Seçilen Ürün: {c_name} - {s_name}\nTutar: 150 TL\n\n"
             f"📌 Ödeme Bildirimi:\n"
             f"Alıcı: {TARGET_NAME}\n"
             f"IBAN: {IBAN}\n\n"
@@ -62,12 +73,15 @@ def callback_query(call):
 @bot.message_handler(content_types=['text', 'photo', 'document'])
 def handle_payment_or_proof(message):
     chat_id = message.chat.id
-    country_id = user_countries.get(chat_id, "0")
+    selection = user_selections.get(chat_id, {"service": "wa", "country": "0"})
+    
+    service = selection["service"]
+    country_id = selection["country"]
     
     bot.reply_to(message, "Dekont / Ödeme alındı! Onaylanıyor ve sistemden numara talep ediliyor, lütfen bekleyin...")
     
     try:
-        url = f"https://onaylasms.com.tr/stubs/handler_api.php?api_key={API_KEY}&action=getNumber&service=wa&country={country_id}"
+        url = f"https://onaylasms.com.tr/stubs/handler_api.php?api_key={API_KEY}&action=getNumber&service={service}&country={country_id}"
         response = requests.get(url, timeout=15)
         res_text = response.text.strip()
         
@@ -82,10 +96,8 @@ def handle_payment_or_proof(message):
         bot.reply_to(message, f"Bağlantı hatası oluştu: {str(e)}")
 
 if __name__ == "__main__":
-    # Flask sunucusunu ayrı bir arkaplanda (thread) başlat
     t = threading.Thread(target=run_flask)
     t.start()
     
-    # Telegram botunu başlat
     bot.remove_webhook()
     bot.infinity_polling()
