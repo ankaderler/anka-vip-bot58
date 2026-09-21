@@ -6,7 +6,7 @@ from flask import Flask
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # Yapılandırma Bilgileri
-TOKEN = "8638410333:AAFfehwYD3v2iPDkI5XygDadjEph2KQ0u_k"
+TOKEN = "8966819189:AAFhWDClW5LfI1UQeKZqhgu8C8OCR-qjqzY"
 API_KEY = "sms_78764ab234637198f606b1bb0ce55ced58aabbb2f1be18b3"
 TARGET_NAME = "Resul Sakal"
 IBAN = "TR62 0006 2000 5000 0006 8107 73"
