@@ -1,6 +1,8 @@
 import os
+import threading
 import requests
 import telebot
+from flask import Flask
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 # Yapılandırma Bilgileri
@@ -10,9 +12,18 @@ TARGET_NAME = "Resul Sakal"
 IBAN = "TR62 0006 2000 5000 0006 8107 73"
 
 bot = telebot.TeleBot(TOKEN)
+app = Flask(__name__)
 
-# Kullanıcıların seçtiği ülkeleri hafızada tutmak için sözlük
 user_countries = {}
+
+@app.route('/')
+def home():
+    return "ANGA VIP SERVICES Bot Aktif ve Calisiyor!"
+
+# Render'ın port isteğini karşılamak için mini web sunucusu
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
@@ -48,11 +59,10 @@ def callback_query(call):
             f"Lütfen yukarıdaki IBAN'a ödemeyi yaptıktan sonra dekontu (fotoğraf veya dosya olarak) gönderin."
         )
 
-# Fotoğraf, dosya (PDF) veya metin türündeki tüm ödeme bildirimlerini hatasız yakalar
 @bot.message_handler(content_types=['text', 'photo', 'document'])
 def handle_payment_or_proof(message):
     chat_id = message.chat.id
-    country_id = user_countries.get(chat_id, "0") # Varsayılan Türkiye
+    country_id = user_countries.get(chat_id, "0")
     
     bot.reply_to(message, "Dekont / Ödeme alındı! Onaylanıyor ve sistemden numara talep ediliyor, lütfen bekleyin...")
     
@@ -72,5 +82,10 @@ def handle_payment_or_proof(message):
         bot.reply_to(message, f"Bağlantı hatası oluştu: {str(e)}")
 
 if __name__ == "__main__":
+    # Flask sunucusunu ayrı bir arkaplanda (thread) başlat
+    t = threading.Thread(target=run_flask)
+    t.start()
+    
+    # Telegram botunu başlat
     bot.remove_webhook()
     bot.infinity_polling()
