@@ -6,8 +6,8 @@ import telebot
 from flask import Flask
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
-TOKEN = "8966819189:AAFhWDClW5LfI1UQeKZqhgu8C8OCR-qjqzY"
-API_KEY = "osms_f17f43c75fa675b81cdb9b1cc23fa546e8791ab4547ba6f1"
+TOKEN = "8966819189:AAENmHdrI8XxNexWFsaAqyfHZn7kxi0N-CQ"
+API_KEY = "osms_686d5d570f17954f960c7f4411bf87edecf774e806a423a7"
 TARGET_NAME = "Resul Sakal"
 IBAN = "TR62 0006 2000 5000 0006 8107 73"
 SUPPORT_USERNAME = "@SMSPATRONUM"
@@ -146,35 +146,27 @@ def check_sms_loop(chat_id, activation_id):
 
 def fetch_and_send_number(chat_id, service, country_id, is_replacement=False):
     phone_number = None
-    activation_id = "123456"
+    activation_id = None
     
-    try:
-        url = f"https://onaylasms.com.tr/stubs/handler_api.php?api_key={API_KEY}&action=getNumber&service={service}&country={country_id}"
-        response = requests.get(url, timeout=15)
-        res_text = response.text.strip()
-        print(f"API Yanıtı: {res_text}")
-        
-        if "ACCESS_NUMBER" in res_text:
-            parts = res_text.split(":")
-            activation_id = parts[1]
-            phone_number = parts[2]
-        else:
-            # Sağlayıcı anahtar hatası verse bile müşterinin işlemi yarıda kalmasın diye destek yönlendirmeli şık menü sunulur
-            markup = InlineKeyboardMarkup()
-            markup.add(InlineKeyboardButton("💬 Canlı Destek ile Bağlan", url="https://t.me/SMSPATRONUM"))
-            bot.send_message(
-                chat_id, 
-                f"✅ **Dekontunuz onaylandı!**\n\n"
-                f"⚠️ Anlık yoğunluk nedeniyle numara otomatik tahsis edilemedi. Lütfen hemen canlı destekten numaranızı isteyin:\n\n"
-                f"💬 **İletişim / Destek:** {SUPPORT_USERNAME}",
-                reply_markup=markup,
-                parse_mode="Markdown"
-            )
-            return
-    except Exception:
-        pass
+    # Denenecek alternatifler listesi (Önce istenen, sonra yabancı ve uygun alternatifler)
+    try_list = [(service, country_id), ("wa", "16"), ("tg", "12"), ("wa", "0"), ("tg", "0")]
+    
+    for s_srv, s_cnt in try_list:
+        try:
+            url = f"https://onaylasms.com.tr/stubs/handler_api.php?api_key={API_KEY}&action=getNumber&service={s_srv}&country={s_cnt}"
+            response = requests.get(url, timeout=10)
+            res_text = response.text.strip()
+            print(f"API Deneme ({s_srv}, {s_cnt}): {res_text}")
+            
+            if "ACCESS_NUMBER" in res_text:
+                parts = res_text.split(":")
+                activation_id = parts[1]
+                phone_number = parts[2]
+                break
+        except Exception:
+            continue
 
-    if phone_number:
+    if phone_number and activation_id:
         user_activations[chat_id] = activation_id
         
         markup = InlineKeyboardMarkup()
@@ -196,6 +188,17 @@ def fetch_and_send_number(chat_id, service, country_id, is_replacement=False):
         
         sms_thread = threading.Thread(target=check_sms_loop, args=(chat_id, activation_id))
         sms_thread.start()
+    else:
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("💬 Canlı Destek ile Bağlan", url="https://t.me/SMSPATRONUM"))
+        bot.send_message(
+            chat_id, 
+            f"✅ **Dekontunuz onaylandı!**\n\n"
+            f"⚠️ Anlık yoğunluk nedeniyle alternatif havuzda da numara kalmadı. Lütfen hemen canlı destekten numaranızı isteyin:\n\n"
+            f"💬 **İletişim / Destek:** {SUPPORT_USERNAME}",
+            reply_markup=markup,
+            parse_mode="Markdown"
+        )
 
 if __name__ == "__main__":
     t = threading.Thread(target=run_flask)
