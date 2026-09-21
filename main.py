@@ -69,6 +69,31 @@ def callback_query(call):
             f"Lütfen yukarıdaki IBAN'a ödemeyi yaptıktan sonra dekontu (fotoğraf veya dosya olarak) gönderin."
         )
 
+# SMS kodunu arka planda periyodik olarak kontrol eden fonksiyon
+def check_sms_loop(chat_id, activation_id):
+    start_time = time.time()
+    # 5 dakika (300 saniye) boyunca kodu aramaya devam eder
+    while time.time() - start_time < 300:
+        try:
+            status_url = f"https://onaylasms.com.tr/stubs/handler_api.php?api_key={API_KEY}&action=getStatus&id={activation_id}"
+            resp = requests.get(status_url, timeout=10)
+            res_text = resp.text.strip()
+            
+            if "STATUS_OK" in res_text:
+                # Örnek yanıt: STATUS_OK:123456
+                code = res_text.split(":")[-1]
+                bot.send_message(chat_id, f"✅ **SMS Kodu Geldi!**\n\n🔑 Kodunuz: `{code}`", parse_mode="Markdown")
+                return
+            elif "STATUS_CANCEL" in res_text:
+                bot.send_message(chat_id, "❌ İşlem iptal edildi veya süre aşımına uğradı.")
+                return
+        except Exception:
+            pass
+        
+        time.sleep(5) # Her 5 saniyede bir kontrol et
+        
+    bot.send_message(chat_id, "⏳ 5 dakika içinde kod gelmediği için işlem zaman aşımına uğradı.")
+
 @bot.message_handler(content_types=['text', 'photo', 'document'])
 def handle_payment_or_proof(message):
     chat_id = message.chat.id
@@ -88,25 +113,27 @@ def handle_payment_or_proof(message):
             parts = res_text.split(":")
             activation_id = parts[1]
             phone_number = parts[2]
-            bot.reply_to(message, f"Numara başarıyla alındı!\nNumara: +{phone_number}\nİşlem ID: {activation_id}")
+            
+            bot.reply_to(message, f"Numara başarıyla alındı!\nNumara: +{phone_number}\nİşlem ID: {activation_id}\n\n⏳ SMS kodu bekleniyor, kod geldiğinde buraya otomatik olarak yazılacak...")
+            
+            # SMS kontrolünü ayrı bir iş parçacığında (thread) başlat
+            sms_thread = threading.Thread(target=check_sms_loop, args=(chat_id, activation_id))
+            sms_thread.start()
         else:
             bot.reply_to(message, f"API'den numara alınamadı. Sağlayıcı yanıtı: {res_text}")
     except Exception as e:
         bot.reply_to(message, f"Bağlantı hatası oluştu: {str(e)}")
 
 if __name__ == "__main__":
-    # Flask sunucusunu başlat
     t = threading.Thread(target=run_flask)
     t.start()
     
-    # Eski webhook ve oturum çakışmalarını tamamen temizle
     try:
         bot.remove_webhook()
         time.sleep(1)
     except Exception:
         pass
     
-    # Çakışma hatalarına karşı güvenli polling döngüsü
     while True:
         try:
             bot.polling(none_stop=True, interval=0, timeout=20)
