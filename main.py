@@ -16,11 +16,13 @@ SUPPORT_USERNAME = "@SMSPATRONUM"
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
+# Kullanıcı verilerini ve aktif aktivasyon ID'lerini tutmak için sözlükler
 user_selections = {}
+user_activations = {}
 
 @app.route('/')
 def home():
-    return "ANGA VIP SERVICES Bot Aktif and Calisiyor!"
+    return "ANGA VIP SERVICES Bot Aktif ve Calisiyor!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -43,14 +45,15 @@ def send_welcome(message):
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     data = call.data
-    bot.answer_callback_query(call.id)
+    chat_id = call.message.chat.id
     
     if data.startswith("sel_"):
+        bot.answer_callback_query(call.id)
         parts = data.split("_")
         service = parts[1]      
         country_id = parts[2]   
         
-        user_selections[call.message.chat.id] = {
+        user_selections[chat_id] = {
             "service": service,
             "country": country_id
         }
@@ -70,17 +73,45 @@ def callback_query(call):
         price = prices.get((service, country_id), "150 TL")
         
         bot.send_message(
-            call.message.chat.id, 
+            chat_id, 
             f"Seçilen Ürün: {c_name} - {s_name}\nTutar: {price}\n\n"
             f"📌 Ödeme Bildirimi:\n"
             f"Alıcı: {TARGET_NAME}\n"
             f"IBAN: {IBAN}\n\n"
             f"Lütfen yukarıdaki IBAN'a ödemeyi yaptıktan sonra dekontu (fotoğraf veya dosya olarak) gönderin."
         )
+        
+    elif data == "change_number":
+        bot.answer_callback_query(call.id, "Eski numara iptal ediliyor ve yeni numara alınıyor...")
+        
+        if chat_id not in user_activations:
+            bot.send_message(chat_id, f"Aktif numaranız bulunamadı. Destek: {SUPPORT_USERNAME}")
+            return
+            
+        old_activation_id = user_activations[chat_id]
+        
+        # 1. Adım: Önce eski numarayı siteden iptal et (status=8 SMS-Activate API standartlarında iptal komutudur)
+        try:
+            cancel_url = f"https://onaylasms.com.tr/stubs/handler_api.php?api_key={API_KEY}&action=setStatus&status=8&id={old_activation_id}"
+            requests.get(cancel_url, timeout=10)
+        except Exception:
+            pass
+            
+        # 2. Adım: Kullanıcının son tercihini alıp yeni numara iste
+        selection = user_selections.get(chat_id, {"service": "wa", "country": "16"}) # Varsayılan ucuz alternatif İngiltere WhatsApp
+        service = selection["service"]
+        country_id = selection["country"]
+        
+        # Numara çekme fonksiyonunu tekrar tetikle
+        fetch_and_send_number(chat_id, service, country_id, is_replacement=True)
 
 def check_sms_loop(chat_id, activation_id):
     start_time = time.time()
     while time.time() - start_time < 300:
+        # Eğer kullanıcı bu işlem sırasında numara değiştirdiyse bu döngüyü sonlandır
+        if user_activations.get(chat_id) != activation_id:
+            return
+            
         try:
             status_url = f"https://onaylasms.com.tr/stubs/handler_api.php?api_key={API_KEY}&action=getStatus&id={activation_id}"
             resp = requests.get(status_url, timeout=10)
@@ -91,42 +122,49 @@ def check_sms_loop(chat_id, activation_id):
                 bot.send_message(chat_id, f"✅ **SMS Kodu Geldi!**\n\n🔑 Kodunuz: `{code}`", parse_mode="Markdown")
                 return
             elif "STATUS_CANCEL" in res_text:
-                bot.send_message(chat_id, f"❌ İşlem iptal edildi veya süre aşımına uğradı. Destek için: {SUPPORT_USERNAME}")
                 return
         except Exception:
             pass
         
         time.sleep(5)
         
-    bot.send_message(chat_id, f"⏳ 5 dakika içinde kod gelmediği için işlem zaman aşımına uğradı. Destek: {SUPPORT_USERNAME}")
+    # Süre aşımı (Kod gelmediyse kullanıcı butona basarak zaten değiştirebilir)
 
-@bot.message_handler(content_types=['text', 'photo', 'document'])
-def handle_payment_or_proof(message):
-    chat_id = message.chat.id
-    
-    if chat_id not in user_selections:
-        bot.reply_to(message, "Lütfen önce /start komutunu gönderip bir hizmet seçin.")
-        return
-
-    # Müşteri herhangi bir dosya / fotoğraf (dekont) attığı an direkt işlem başlatılır
-    selection = user_selections[chat_id]
-    service = selection["service"]
-    country_id = selection["country"]
-    
+def fetch_and_send_number(chat_id, service, country_id, is_replacement=False):
     try:
         url = f"https://onaylasms.com.tr/stubs/handler_api.php?api_key={API_KEY}&action=getNumber&service={service}&country={country_id}"
         response = requests.get(url, timeout=15)
         res_text = response.text.strip()
         
+        # Eğer istenen ülkede stok yoksa (NO_NUMBERS), 100 TL altı garantili başka bir ucuz yabancı numaraya yönlendir (Örn: İngiltere WhatsApp - country=16)
+        if "NO_NUMBERS" in res_text or "ACCESS_NUMBER" not in res_text:
+            fallback_url = f"https://onaylasms.com.tr/stubs/handler_api.php?api_key={API_KEY}&action=getNumber&service=wa&country=16"
+            fallback_resp = requests.get(fallback_url, timeout=15)
+            res_text = fallback_resp.text.strip()
+            
         if "ACCESS_NUMBER" in res_text:
             parts = res_text.split(":")
             activation_id = parts[1]
             phone_number = parts[2]
             
+            # Aktif ID'yi kaydet
+            user_activations[chat_id] = activation_id
+            
+            # Numara değiştirme tuşunu oluştur
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("🔄 Kod Gelmedi / Numara Değiştir", callback_data="change_number"))
+            
+            prefix_text = "🔄 **Yeni Numaranız Hazırlandı!**\n\n" if is_replacement else "✅ **Dekont onaylandı, numaranız alındı!**\n\n"
+            
             bot.send_message(
                 chat_id, 
-                f"✅ Numara başarıyla alındı!\n\nNumara: +{phone_number}\nİşlem ID: {activation_id}\n\n"
-                f"⏳ SMS kodu bekleniyor, kod geldiğinde buraya otomatik olarak yazılacak..."
+                f"{prefix_text}"
+                f"Numara: +{phone_number}\n"
+                f"İşlem ID: {activation_id}\n\n"
+                f"⏳ SMS kodu bekleniyor...\n"
+                f"*(Eğer koda ulaşamazsanız aşağıdaki butonu kullanarak ilk numaranızı iptal edip anında yeni numara alabilirsiniz)*", 
+                reply_markup=markup,
+                parse_mode="Markdown"
             )
             
             sms_thread = threading.Thread(target=check_sms_loop, args=(chat_id, activation_id))
@@ -134,12 +172,25 @@ def handle_payment_or_proof(message):
         else:
             bot.send_message(
                 chat_id, 
-                f"⚠️ Numara alınamadı!\nSağlayıcı Yanıtı: `{res_text}`\n\n"
-                f"Destek ve sorun bildirimleri için: {SUPPORT_USERNAME}", 
-                parse_mode="Markdown"
+                f"⚠️ Yoğunluk nedeniyle geçici bir durum oluştu. Lütfen tekrar dekont gönderin veya destekle iletişime geçin: {SUPPORT_USERNAME}"
             )
     except Exception as e:
         bot.send_message(chat_id, f"Bağlantı hatası oluştu: {str(e)}. Destek: {SUPPORT_USERNAME}")
+
+@bot.message_handler(content_types=['text', 'photo', 'document', 'audio', 'video', 'sticker'])
+def handle_payment_or_proof(message):
+    chat_id = message.chat.id
+    
+    if chat_id not in user_selections:
+        bot.reply_to(message, "Lütfen önce /start komutunu gönderip bir hizmet seçin.")
+        return
+
+    selection = user_selections[chat_id]
+    service = selection["service"]
+    country_id = selection["country"]
+    
+    bot.reply_to(message, "🔄 Dekont alındı, numara hazırlanıyor...")
+    fetch_and_send_number(chat_id, service, country_id, is_replacement=False)
 
 if __name__ == "__main__":
     t = threading.Thread(target=run_flask)
