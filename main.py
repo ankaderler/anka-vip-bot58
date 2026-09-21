@@ -11,6 +11,7 @@ TOKEN = "8966819189:AAFhWDClW5LfI1UQeKZqhgu8C8OCR-qjqzY"
 API_KEY = "osms_78764ab234637198f606b1bb0ce55ced58aabbb2f1be18b3"
 TARGET_NAME = "Resul Sakal"
 IBAN = "TR62 0006 2000 5000 0006 8107 73"
+SUPPORT_USERNAME = "@SMSPATRONUM"
 
 bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
@@ -19,7 +20,7 @@ user_selections = {}
 
 @app.route('/')
 def home():
-    return "ANGA VIP SERVICES Bot Aktif ve Calisiyor!"
+    return "ANGA VIP SERVICES Bot Aktif and Calisiyor!"
 
 def run_flask():
     port = int(os.environ.get("PORT", 10000))
@@ -28,7 +29,6 @@ def run_flask():
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
     markup = InlineKeyboardMarkup()
-    # İstediğin güncel fiyatlar eklendi
     markup.add(InlineKeyboardButton("🇹🇷 Türkiye - WhatsApp (300 TL)", callback_data="sel_wa_0"))
     markup.add(InlineKeyboardButton("🇬🇧 İngiltere - WhatsApp (150 TL)", callback_data="sel_wa_16"))
     markup.add(InlineKeyboardButton("🇺🇸 Amerika - Telegram (150 TL)", callback_data="sel_tg_12"))
@@ -61,7 +61,6 @@ def callback_query(call):
         c_name = c_names.get(country_id, "Türkiye")
         s_name = s_names.get(service, "WhatsApp")
         
-        # Seçime göre fiyat belirleme metni
         prices = {
             ("wa", "0"): "300 TL",
             ("wa", "16"): "150 TL",
@@ -92,35 +91,27 @@ def check_sms_loop(chat_id, activation_id):
                 bot.send_message(chat_id, f"✅ **SMS Kodu Geldi!**\n\n🔑 Kodunuz: `{code}`", parse_mode="Markdown")
                 return
             elif "STATUS_CANCEL" in res_text:
-                bot.send_message(chat_id, "❌ İşlem iptal edildi veya süre aşımına uğradı.")
+                bot.send_message(chat_id, f"❌ İşlem iptal edildi veya süre aşımına uğradı. Destek için: {SUPPORT_USERNAME}")
                 return
         except Exception:
             pass
         
         time.sleep(5)
         
-    bot.send_message(chat_id, "⏳ 5 dakika içinde kod gelmediği için işlem zaman aşımına uğradı.")
+    bot.send_message(chat_id, f"⏳ 5 dakika içinde kod gelmediği için işlem zaman aşımına uğradı. Destek: {SUPPORT_USERNAME}")
 
 @bot.message_handler(content_types=['text', 'photo', 'document'])
 def handle_payment_or_proof(message):
     chat_id = message.chat.id
     
-    # Kullanıcı daha önce seçim yapmış mı kontrol et
     if chat_id not in user_selections:
         bot.reply_to(message, "Lütfen önce /start komutunu gönderip bir hizmet seçin.")
         return
 
-    # Bot dekontu inceliyor (Gelen verinin fotoğraf veya belge/PDF olup olmadığını kontrol eder)
-    if message.content_type not in ['photo', 'document']:
-        bot.reply_to(message, "❌ Geçersiz ödeme bildirimi! Lütfen geçerli bir dekont fotoğrafı veya belgesi (PDF) yükleyin.")
-        return
-
+    # Müşteri herhangi bir dosya / fotoğraf (dekont) attığı an direkt işlem başlatılır
     selection = user_selections[chat_id]
     service = selection["service"]
     country_id = selection["country"]
-    
-    bot.reply_to(message, "🔍 Dekont bot tarafından inceleniyor ve onaylanıyor, lütfen bekleyin...")
-    time.sleep(2) # Kısa bir inceleme efekti
     
     try:
         url = f"https://onaylasms.com.tr/stubs/handler_api.php?api_key={API_KEY}&action=getNumber&service={service}&country={country_id}"
@@ -134,7 +125,7 @@ def handle_payment_or_proof(message):
             
             bot.send_message(
                 chat_id, 
-                f"✅ Dekont onaylandı!\n\nNumara başarıyla alındı!\nNumara: +{phone_number}\nİşlem ID: {activation_id}\n\n"
+                f"✅ Numara başarıyla alındı!\n\nNumara: +{phone_number}\nİşlem ID: {activation_id}\n\n"
                 f"⏳ SMS kodu bekleniyor, kod geldiğinde buraya otomatik olarak yazılacak..."
             )
             
@@ -143,12 +134,12 @@ def handle_payment_or_proof(message):
         else:
             bot.send_message(
                 chat_id, 
-                f"⚠️ Dekont incelendi ancak numara temin edilemedi!\nSağlayıcı Yanıtı: `{res_text}`\n\n"
-                f"Lütfen stok veya bakiye durumunu kontrol edin veya destekle iletişime geçin.", 
+                f"⚠️ Numara alınamadı!\nSağlayıcı Yanıtı: `{res_text}`\n\n"
+                f"Destek ve sorun bildirimleri için: {SUPPORT_USERNAME}", 
                 parse_mode="Markdown"
             )
     except Exception as e:
-        bot.send_message(chat_id, f"Bağlantı hatası oluştu: {str(e)}")
+        bot.send_message(chat_id, f"Bağlantı hatası oluştu: {str(e)}. Destek: {SUPPORT_USERNAME}")
 
 if __name__ == "__main__":
     t = threading.Thread(target=run_flask)
