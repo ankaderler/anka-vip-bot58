@@ -30,7 +30,7 @@ def run_web_server():
 threading.Thread(target=run_web_server, daemon=True).start()
 
 # Yeni Token
-BOT_TOKEN = "8905246835:AAHgv4My2Prp77oEbLX3ybEFXNSbypBVumE"
+BOT_TOKEN = "8874989367:AAFeyFjKEn4g5Rp45EC0nym-1yCFOCbEcbc" 
 
 # Sitenizdeki sorgu scriptinin adresi (Burayı kendi sitenize göre güncelleyin)
 SORGULA_URL = "https://sitenizinadresi.com/sorgula.php"
